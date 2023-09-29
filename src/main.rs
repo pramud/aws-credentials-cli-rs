@@ -102,14 +102,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let role_name = sub_matches.get_one::<String>("role").unwrap().to_string();
             let region = sub_matches.get_one::<String>("region").unwrap().to_string();
             let duration = *sub_matches.get_one::<i32>("duration").unwrap();
-            let mut output_format = OutputFormat::Json;
-            if let Some(env_vars_requested) = sub_matches.get_one::<bool>("env_vars") {
-                output_format = if *env_vars_requested {
-                    OutputFormat::EnvVars
-                } else {
-                    OutputFormat::Json
-                }
-            }
+            let env_vars_requested = *sub_matches.get_one::<bool>("env_vars").unwrap();
+            let output_format = if env_vars_requested {
+                OutputFormat::EnvVars
+            } else {
+                OutputFormat::Json
+            };
             let force_renew = *sub_matches.get_one::<bool>("force").unwrap();
             info!("Using duration {duration}");
             info!("Using region {region}");
