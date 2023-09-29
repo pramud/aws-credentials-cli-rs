@@ -1,0 +1,108 @@
+use azure_core::auth::TokenResponse;
+use azure_core::auth::TokenCredential;
+use azure_identity::*;
+use std::error::Error;
+use std::time::SystemTime;
+use reqwest;
+use aws_config;
+use aws_sdk_sts;
+use aws_config::meta::region::RegionProviderChain;
+use aws_sdk_sts::config::Region;
+use clap::{arg, Command, Parser};
+use serde::{Serialize, Deserialize};
+use serde_json;
+use std::convert::TryFrom;
+use chrono::{DateTime, Utc, Local};
+
+const DEFAULT_CREDS_VERSION: i32 = 1;
+
+/// Utility to acquire temporary AWS credentials using the Azure AD based token exchange method.
+/// See https://lego.com/
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// The AWS Region.
+    #[arg(short, long)]
+    region: Option<String>,
+}
+
+fn cli() -> Command {
+    Command::new("aws-credentials-cli")
+        .about("Utility to acquire temporary AWS credentials using the Azure AD based token exchange method.")
+        .subcommand_required(true)
+        .arg_required_else_help(true)
+        .subcommand(
+    Command::new("clear-cache")
+                .about("Clear cache. Deletes all files in cache folder")
+        )
+        .subcommand(
+            Command::new("explicit")
+                .arg(
+                    arg!(-a --account <ACCOUNT_ID>)
+                )
+        )
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct TemporaryAwsCredentials {
+    pub version: i32,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub session_token: String,
+    pub expiration: DateTime<Utc>,
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let Args {
+        region,
+    } = Args::parse();
+
+    let az_cli_credential = AzureCliCredential::new();
+    let res: TokenResponse = az_cli_credential.get_token("api://3cd4d944-d89b-401b-b2ae-fb1ece182362").await?;
+    let token = res.token.secret();
+    let client = reqwest::Client::new();
+    let saml_token = client
+        .get("https://ws-iam-commontools-oidc2saml.azurewebsites.net/api/TokenExchange/SAMLResponse")
+        .query(&[("IdentifierUri", "https://signin.aws.amazon.com/saml/196649124210")])
+        .bearer_auth(token)
+        .send()
+        .await?
+        .text()
+        .await?;
+
+    let region_provider = RegionProviderChain::first_try(region.map(Region::new))
+        .or_default_provider()
+        .or_else(Region::new("eu-west-1"));
+
+    let config = aws_config::from_env()
+        .no_credentials()
+        .region(region_provider)
+        .load()
+        .await;
+
+    let sts_client = aws_sdk_sts::Client::new(&config);
+    let result = sts_client.assume_role_with_saml()
+        .role_arn("arn:aws:iam::196649124210:role/SSO-Developer")
+        .principal_arn("arn:aws:iam::196649124210:saml-provider/AzureAD")
+        .saml_assertion(saml_token)
+        .send()
+        .await;
+    let aws_creds = result?.credentials.unwrap();
+    let expiration_as_system_time = SystemTime::try_from(aws_creds.expiration.unwrap())?;
+    let creds = TemporaryAwsCredentials {
+        version: DEFAULT_CREDS_VERSION,
+        access_key_id: aws_creds.access_key_id.unwrap(),
+        secret_access_key: aws_creds.secret_access_key.unwrap(),
+        session_token: aws_creds.session_token.unwrap(),
+        expiration: expiration_as_system_time.into(),
+    };
+
+    let json_string = serde_json::to_string_pretty(&creds)?;
+
+    println!("{}", json_string);
+    println!("{}", creds.expiration.with_timezone(&Local));
+
+    Ok(())
+}
