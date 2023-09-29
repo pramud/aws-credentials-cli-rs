@@ -31,5 +31,5 @@ pub async fn saml_token_from_oidc_token(account_id: &str, oidc_token: &String) -
 
 pub async fn saml_token(account_id: &str) -> Result<String, Box<dyn Error>> {
     let oidc_token = oidc_token().await?;
-    saml_token_from_oidc_token(&account_id, &oidc_token).await
+    saml_token_from_oidc_token(account_id, &oidc_token).await
 }
