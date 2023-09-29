@@ -14,7 +14,7 @@ pub async fn oidc_token() -> Result<String, Box<dyn Error>> {
     Ok(token.to_string())
 }
 
-pub async fn saml_token(account_id: &str, oidc_token: &String) -> Result<String, Box<dyn Error>> {
+pub async fn saml_token_from_oidc_token(account_id: &str, oidc_token: &String) -> Result<String, Box<dyn Error>> {
     let client = reqwest::Client::new();
     let mut identifier_uri = String::from(IDENTIFIER_URI_BASE);
     identifier_uri.push_str(account_id);
@@ -27,4 +27,9 @@ pub async fn saml_token(account_id: &str, oidc_token: &String) -> Result<String,
         .text()
         .await?;
     Ok(saml_token)
+}
+
+pub async fn saml_token(account_id: &str) -> Result<String, Box<dyn Error>> {
+    let oidc_token = oidc_token().await?;
+    saml_token_from_oidc_token(&account_id, &oidc_token).await
 }
