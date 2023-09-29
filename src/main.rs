@@ -35,7 +35,7 @@ fn store_credentials_cache(cache_file_path: &Path, credentials: &TemporaryAwsCre
     Ok(())
 }
 
-fn credentials_from_file(path: PathBuf) -> Result<TemporaryAwsCredentials, CachedCredentialsError> {
+fn credentials_from_cache(path: PathBuf) -> Result<TemporaryAwsCredentials, CachedCredentialsError> {
     let file = File::open(path)?;
     let credentials: TemporaryAwsCredentials = serde_json::from_reader(file)?;
     if credentials.expiration < Utc::now() {
@@ -43,7 +43,6 @@ fn credentials_from_file(path: PathBuf) -> Result<TemporaryAwsCredentials, Cache
     }
     Ok(credentials)
 }
-
 fn print_credentials(credentials: &TemporaryAwsCredentials, output_format: OutputFormat) {
     match output_format {
         OutputFormat::Json => credentials.as_json(),
@@ -124,7 +123,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             if !force_renew {
                 info!("Attempting to fetch credentials from cache");
-                match credentials_from_file(cache_file_path(&role_info)) {
+                match credentials_from_cache(cache_file_path(&role_info)) {
                     Ok(credentials) => {
                         print_credentials(&credentials, output_format);
                         return Ok(());
