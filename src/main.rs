@@ -101,7 +101,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             let role_info = RoleInfoBuilder::default()
                 .role_name(role)
-                .account_id(account.clone())
+                .account_id(account)
                 .region(region)
                 .duration(duration)
                 .build()?;
