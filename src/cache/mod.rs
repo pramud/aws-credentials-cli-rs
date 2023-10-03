@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use chrono::{DateTime, Utc};
 use log::{info, error};
 
-use super::RoleInfo;
+use super::models::RoleInfo;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CachedCredentialsError {

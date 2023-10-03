@@ -1,71 +1,72 @@
-use clap::{Args, ArgMatches, ArgAction, value_parser, arg, Command, FromArgMatches};
+use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 
-use super::defaults::{DEFAULT_DURATION, DEFAULT_REGION};
+use crate::defaults::{DEFAULT_DURATION, DEFAULT_REGION};
 
-#[derive(Args, Debug)]
-pub struct VerbosityArgs {
+#[derive(Debug, Parser)]
+#[command(name="aws-credentials-cli")]
+#[command(about="Utility to acquire temporary AWS credentials using the Azure AD based token exchange method.", long_about = None)]
+pub struct Cli {
+    // Add option for setting custom cache dir and retain the option between calls
+    // Add option for storing and getting credentials from the AWS creds file. Use the aws_cred
+    // crate for that.
+
     #[command(flatten)]
-    verbose: Verbosity,
+    pub verbose: Verbosity,
+
+    #[command(subcommand)]
+    pub command: Commands,
 }
 
-pub fn cli() -> Command {
-    let cli = Command::new("aws-credentials-cli")
-        .about("Utility to acquire temporary AWS credentials using the Azure AD based token exchange method.")
-        .subcommand_required(true)
-        .arg_required_else_help(true)
-        // Add option for setting custom cache dir and retain the option between calls
-        // Add option for storing and getting credentials from the AWS creds file. Use the aws_cred
-        // crate for that.
-        .subcommand(
-    Command::new("cache")
-                .about("Credentials cache operations. If no subcommand is given then it defaults to 'path'.")
-                .subcommand(
-                    Command::new("path")
-                    .about("Prints the cache directory path")
-                )
-                .subcommand(
-                    Command::new("clear")
-                    .about("Clear the credentials cache. Deletes all files in the cache directory.")
-                    .arg(arg!(-y --yes "Do not ask for permission. Use with caution!")
-                         .action(ArgAction::SetTrue)
-                         .default_value("false"))
-                )
-        )
-        .subcommand(
-    Command::new("assume")
-                .about("Assume role on account to get temporary credentials.")
-                .arg_required_else_help(true)
-                .arg(arg!(-a --account <ACCOUNT_ID>)
-                     .required(true)
-                )
-                .arg(arg!(-r --role <ROLE_NAME>)
-                     .required(true)
-                )
-                .arg(arg!(-d --duration <SECONDS> "The AWS session duration in seconds. Must be minimum 900 seconds (15 minutes).")
-                    .default_value(DEFAULT_DURATION)
-                    .value_parser(value_parser!(i32))
-                )
-                .arg(arg!(-g --region <REGION> "The region to use.")
-                     .default_value(DEFAULT_REGION)
-                 )
-                .arg(arg!(-f --force "Force fetching new credentials regardless of non-expired cached credentials.")
-                     .action(ArgAction::SetTrue)
-                     .default_value("false")
-                )
-                .arg(arg!(-j --json "Output as JSON.")
-                     .action(ArgAction::SetTrue)
-                     .default_value("true")
-                     .conflicts_with("env_vars")
-                )
-                .arg(arg!(-e --env_vars "Output as shell variable export statements suitable for shell eval.")
-                     .action(ArgAction::SetTrue)
-                     .default_value("false")
-                )
-        );
-    VerbosityArgs::augment_args(cli)
+#[derive(Debug, Subcommand)]
+pub enum Commands {
+    /// Credentials cache operations. If no subcommand is given then it defaults to 'path'.
+    Cache {
+        #[command(subcommand)]
+        command: Option<CacheCommands>,
+    },
+    /// Assume role on account to get temporary credentials.
+    Assume {
+        /// Assume role on account to get temporary credentials.
+        #[arg(short, long)]
+        account: String,
+
+        /// The role to assume.
+        #[arg(short, long)]
+        role: String,
+
+        /// The AWS session duration in seconds. Must be minimum 900 seconds (15 minutes).
+        #[arg(short, long)]
+        #[arg(value_parser = clap::value_parser!(i32).range(900..))]
+        #[arg(default_value_t = DEFAULT_DURATION)]
+        duration: i32,
+
+        /// The region to use.
+        #[arg(long, default_value_t = DEFAULT_REGION.to_string())]
+        region: String,
+
+        /// Force fetching new credentials regardless of non-expired cached credentials.
+        #[arg(short, long)]
+        force: bool,
+
+        /// Output as JSON.
+        #[arg(short, long, default_value_t = true)]
+        json: bool,
+        
+        /// Output as shell variable export statements suitable for shell eval.
+        #[arg(short, long, conflicts_with = "json")]
+        env_vars: bool,
+    },
 }
 
-pub fn verbosity(matches: &ArgMatches) -> Verbosity {
-    VerbosityArgs::from_arg_matches(matches).unwrap().verbose
+#[derive(Debug, Subcommand)]
+pub enum CacheCommands {
+    /// Clears the credentials cache. Deletes all files in the cache directory.
+    Clear {
+        /// Do not ask for permission.
+        #[arg(short, long)]
+        yes: bool,
+    },
+    /// Prints the cache directory path.
+    Path,
 }

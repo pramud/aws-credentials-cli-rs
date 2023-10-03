@@ -1,35 +1,29 @@
 use std::error::Error;
 use std::fs::File;
-use log::{debug, info, warn, error};
+use log::{debug, info, warn};
 use std::path::Path;
 use std::path::PathBuf;
+
 use chrono::{Utc, Local};
-use derive_builder::Builder;
-use cache::{CachedCredentialsError, create_cache_dir, cache_dir, cache_file_path, remove_all_cached_files};
+
+use cache::{CachedCredentialsError, cache_file_path, create_cache_dir};
+use crate::cache::{cache_dir, remove_all_cached_files};
 use defaults::{DEFAULT_REGION, DEFAULT_CREDS_VERSION};
 use assume::models::TemporaryAwsCredentials;
+use models::{RoleInfo, RoleInfoBuilder};
+
+use cli::{Cli, Commands, CacheCommands};
+use clap::Parser;
 
 mod assume;
 mod cache;
 mod cli;
 mod defaults;
-
-#[derive(Debug, Builder)]
-pub struct RoleInfo {
-    role_name: String,
-    account_id: String,
-    region: String,
-    duration: i32,
-}
-
-impl RoleInfo {
-    pub fn role_arn(&self) -> String {
-        format!("arn:aws:iam::{}:role/{}", self.account_id, self.role_name)
-    }
-}
+mod models;
 
 fn store_credentials_cache(cache_file_path: &Path, credentials: &TemporaryAwsCredentials) -> Result<(), CachedCredentialsError> {
     debug!("Storing creds to file {}", cache_file_path.as_os_str().to_str().unwrap());
+    create_cache_dir()?;
     let cache_file = File::create(cache_file_path)?;
     serde_json::to_writer_pretty(cache_file, &credentials)?;
     Ok(())
@@ -43,6 +37,7 @@ fn credentials_from_cache(path: PathBuf) -> Result<TemporaryAwsCredentials, Cach
     }
     Ok(credentials)
 }
+
 fn print_credentials(credentials: &TemporaryAwsCredentials, output_format: OutputFormat) {
     match output_format {
         OutputFormat::Json => credentials.as_json(),
@@ -58,68 +53,59 @@ enum OutputFormat {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let matches = cli::cli().get_matches();
 
-    let verbosity = cli::verbosity(&matches);
+    let args = Cli::parse();
     env_logger::Builder::new()
-        .filter_level(verbosity.log_level_filter())
+        .filter_level(args.verbose.log_level_filter())
         .init();
 
-    match matches.subcommand() {
-        Some(("cache", sub_matches)) => {
-            let cache_command = sub_matches.subcommand().unwrap_or(("path", sub_matches));
+    match args.command {
+        Commands::Cache { command } => {
+            let cache_command = command.unwrap_or(CacheCommands::Path);
+
             match cache_command {
-                ("path", _) => {
+                CacheCommands::Path => {
                     println!("{}", cache_dir().to_str().unwrap());
                     return Ok(());
-                } 
-                ("clear", sub_matches) => {
-                    let delete_unconditionally = *sub_matches.get_one::<bool>("yes").unwrap();
-                    let mut do_delete = false;
-                    if delete_unconditionally {
-                        do_delete = true;
+                }
+                CacheCommands::Clear { yes } => {
+                    let do_delete = if yes {
+                        true
                     } else {
                         print!("This will delete all cached credentials in the cache directory. Type yes to continue, anything else to cancel: ");
                         let answer: String = text_io::read!();
-                        if answer.to_lowercase() == "yes" {
-                            do_delete = true;
-                        }
-                    }
+                        answer.to_lowercase() == "yes"
+                    };
                     if do_delete {
                         remove_all_cached_files()?;
                     }
-
-                }
-                (name, _) => {
-                    unreachable!("Unsupported subcommand '{name}'")
                 }
             }
         }
-        Some(("assume", sub_matches)) => {
-            create_cache_dir()?;
-
-            let account_id = sub_matches.get_one::<String>("account").unwrap().to_string();
-            let role_name = sub_matches.get_one::<String>("role").unwrap().to_string();
-            let region = sub_matches.get_one::<String>("region").unwrap().to_string();
-            let duration = *sub_matches.get_one::<i32>("duration").unwrap();
-            let env_vars_requested = *sub_matches.get_one::<bool>("env_vars").unwrap();
-            let output_format = if env_vars_requested {
+        Commands::Assume {
+            account,
+            role,
+            duration,
+            region,
+            force,
+            json: _,
+            env_vars
+        } => {
+            let output_format = if env_vars {
                 OutputFormat::EnvVars
             } else {
                 OutputFormat::Json
             };
-            let force_renew = *sub_matches.get_one::<bool>("force").unwrap();
             info!("Using duration {duration}");
             info!("Using region {region}");
 
             let role_info = RoleInfoBuilder::default()
-                .role_name(role_name)
-                .account_id(account_id.clone())
+                .role_name(role)
+                .account_id(account.clone())
                 .region(region)
                 .duration(duration)
                 .build()?;
-
-            if !force_renew {
+            if !force {
                 info!("Attempting to fetch credentials from cache");
                 match credentials_from_cache(cache_file_path(&role_info)) {
                     Ok(credentials) => {
@@ -139,10 +125,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             print_credentials(&credentials, output_format);
             store_credentials_cache(&cache_file_path(&role_info), &credentials)?;
         }
-        _ => {
-            error!("Unknown or no subcommand");
-        }
     }
+
 
     Ok(())
 }
