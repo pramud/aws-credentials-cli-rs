@@ -7,7 +7,7 @@ use crate::{DEFAULT_CREDS_VERSION, RoleInfo};
 use super::models::{TemporaryAwsCredentials, TemporaryAwsCredentialsBuilder};
 
 
-pub async fn acquire_aws_credentials(role_info: &RoleInfo, saml_token: &String) -> Result<TemporaryAwsCredentials, Box<dyn Error>> {
+pub async fn acquire_aws_credentials(role_info: &RoleInfo, saml_token: &str) -> Result<TemporaryAwsCredentials, Box<dyn Error>> {
     let config = aws_config::from_env()
         .no_credentials()
         .region(Region::new(role_info.region.clone()))
