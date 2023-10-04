@@ -1,13 +1,14 @@
 use clap::{Parser, Subcommand};
 use clap_verbosity_flag::Verbosity;
 
-use crate::defaults::{DEFAULT_DURATION, DEFAULT_REGION};
+use crate::defaults::{DEFAULT_DURATION, VALID_AWS_PARTITIONS, DEFAULT_AWS_PARTITION, DEFAULT_REGION};
 
 #[derive(Debug, Parser)]
 #[command(name="aws-credentials-cli")]
 #[command(about="Utility to acquire temporary AWS credentials using the Azure AD based token exchange method.", long_about = None)]
 pub struct Cli {
-    // Add option for setting custom cache dir and retain the option between calls
+    // Add subcommand for config
+    //     Add config subcommand for setting custom cache dir
     // Add option for storing and getting credentials from the AWS creds file. Use the aws_cred
     // crate for that.
 
@@ -27,6 +28,12 @@ pub enum Commands {
     },
     /// Assume role on account to get temporary credentials.
     Assume {
+        /// The AWS partition for the account
+        #[arg(long)]
+        #[arg(value_parser = VALID_AWS_PARTITIONS)]
+        #[arg(default_value_t = String::from(DEFAULT_AWS_PARTITION))]
+        aws_partition: String,
+
         /// Assume role on account to get temporary credentials.
         #[arg(short, long)]
         account: String,

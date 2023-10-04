@@ -83,6 +83,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
         Commands::Assume {
+            aws_partition,
             account,
             role,
             duration,
@@ -100,6 +101,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             info!("Using region {region}");
 
             let role_info = RoleInfoBuilder::default()
+                .aws_partition(aws_partition)
                 .role_name(role)
                 .account_id(account)
                 .region(region)
