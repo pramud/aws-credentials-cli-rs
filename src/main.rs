@@ -21,7 +21,7 @@ mod cli;
 mod defaults;
 mod models;
 
-fn store_credentials_cache(cache_file_path: &Path, credentials: &TemporaryAwsCredentials) -> Result<(), CachedCredentialsError> {
+fn store_credentials_cache(cache_file_path: &Path, credentials: &TemporaryAwsCredentials) -> cache::Result<()> {
     debug!("Storing creds to file {}", cache_file_path.as_os_str().to_str().unwrap());
     create_cache_dir()?;
     let cache_file = File::create(cache_file_path)?;
@@ -29,7 +29,7 @@ fn store_credentials_cache(cache_file_path: &Path, credentials: &TemporaryAwsCre
     Ok(())
 }
 
-fn credentials_from_cache(path: PathBuf) -> Result<TemporaryAwsCredentials, CachedCredentialsError> {
+fn credentials_from_cache(path: PathBuf) -> cache::Result<TemporaryAwsCredentials> {
     let file = File::open(path)?;
     let credentials: TemporaryAwsCredentials = serde_json::from_reader(file)?;
     if credentials.expiration < Utc::now() {
@@ -116,7 +116,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                     Err(error) => match error {
                         CachedCredentialsError::JsonError(err) => warn!("JSON error: {err}"),
-                        CachedCredentialsError::FileError(err) => warn!("File error: {err}"),
+                        CachedCredentialsError::FileSystemError(err) => warn!("File error: {err}"),
                         CachedCredentialsError::TokenExpired(expiration_time) => warn!("AWS credentials expired at {expiration_time} ({} local time)", expiration_time.with_timezone(&Local)),
                     }
                 };
