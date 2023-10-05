@@ -65,7 +65,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             match cache_command {
                 CacheCommands::Path => {
-                    println!("{}", cache_dir().to_str().unwrap());
+                    match cache_dir() {
+                        Ok(cache_dir) => {
+                            println!("{}", cache_dir.display());
+                        }
+                        Err(error) => {
+                            eprintln!("{error}");
+                        }
+                    }
                     return Ok(());
                 }
                 CacheCommands::Clear { yes } => {
@@ -109,7 +116,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .build()?;
             if !force {
                 info!("Attempting to fetch credentials from cache");
-                match credentials_from_cache(cache_file_path(&role_info)) {
+                match credentials_from_cache(cache_file_path(&role_info)?) {
                     Ok(credentials) => {
                         print_credentials(&credentials, output_format);
                         return Ok(());
@@ -118,6 +125,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         CachedCredentialsError::JsonError(err) => warn!("JSON error: {err}"),
                         CachedCredentialsError::FileSystemError(err) => warn!("File error: {err}"),
                         CachedCredentialsError::TokenExpired(expiration_time) => warn!("AWS credentials expired at {expiration_time} ({} local time)", expiration_time.with_timezone(&Local)),
+                        CachedCredentialsError::UnsupportedPlatform => warn!("Can not cache credentials on this platform")
                     }
                 };
             }
@@ -125,7 +133,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             info!("Acquiring credentials");
             let credentials = assume::acquire_credentials(&role_info).await?;
             print_credentials(&credentials, output_format);
-            store_credentials_cache(&cache_file_path(&role_info), &credentials)?;
+            store_credentials_cache(&cache_file_path(&role_info)?, &credentials)?;
         }
     }
 
