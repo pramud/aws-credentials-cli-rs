@@ -4,9 +4,9 @@ mod cli;
 mod defaults;
 mod models;
 
-use std::io;
 use std::error::Error;
 use std::fs::File;
+use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -28,8 +28,12 @@ use clap::{Command, CommandFactory, Parser};
 use clap_complete::{generate, Generator};
 use cli::{Cli, Commands, CacheCommands};
 
-fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
-    generate(gen, cmd, cmd.get_name().to_string(), &mut io::stdout());
+fn print_completions<G, W>(gen: G, cmd: &mut Command, output: &mut W) 
+where
+    G: Generator,
+    W: Write,
+{
+    generate(gen, cmd, cmd.get_name().to_string(), output);
 }
 
 fn store_credentials_cache(cache_file_path: &Path, credentials: &TemporaryAwsCredentials) -> cache::Result<()> {
@@ -144,10 +148,10 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             print_credentials(&credentials, output_format);
             store_credentials_cache(&cache_file_path(&role_info)?, &credentials)?;
         }
-        Commands::GenerateCompletions { shell } => {
+        Commands::GenerateCompletions { shell, mut output } => {
             eprintln!("Generating completion file for {shell} ...");
             let mut cmd = Cli::command();
-            print_completions(shell, &mut cmd);
+            print_completions(shell, &mut cmd, &mut output);
         }
     }
     Ok(())

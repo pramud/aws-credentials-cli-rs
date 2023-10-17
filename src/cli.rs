@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueHint};
 use clap_complete::Shell;
 use clap_verbosity_flag::Verbosity;
 
@@ -69,6 +69,11 @@ pub enum Commands {
     /// Redirect the output to a suitable directory for your shell and run the intitialization
     /// command for the completion system in the selected shell.
     GenerateCompletions {
+        /// Write output to this file. Use `-` for standard output (default).
+        #[arg(short, long, value_hint = ValueHint::FilePath)]
+        #[arg(value_parser, default_value="-")]
+        output: clio::Output,
+
         /// The shell for which to generate completion scripts.
         #[arg(value_parser = clap::value_parser!(Shell))]
         shell: Shell,
