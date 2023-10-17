@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use clap_complete::Shell;
 use clap_verbosity_flag::Verbosity;
 
 use crate::defaults::{DEFAULT_DURATION, VALID_AWS_PARTITIONS, DEFAULT_AWS_PARTITION, DEFAULT_REGION};
@@ -64,6 +65,14 @@ pub enum Commands {
         #[arg(short, long, conflicts_with = "json")]
         env_vars: bool,
     },
+    /// Generate completion scripts for a supported shell.
+    /// Redirect the output to a suitable directory for your shell and run the intitialization
+    /// command for the completion system in the selected shell.
+    GenerateCompletions {
+        /// The shell for which to generate completion scripts.
+        #[arg(value_parser = clap::value_parser!(Shell))]
+        shell: Shell,
+    }
 }
 
 #[derive(Debug, Subcommand)]

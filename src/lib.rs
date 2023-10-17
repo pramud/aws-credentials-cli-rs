@@ -4,6 +4,7 @@ mod cli;
 mod defaults;
 mod models;
 
+use std::io;
 use std::error::Error;
 use std::fs::File;
 use std::path::Path;
@@ -23,8 +24,14 @@ use defaults::{DEFAULT_REGION, DEFAULT_CREDS_VERSION};
 use assume::models::TemporaryAwsCredentials;
 use models::{RoleInfo, RoleInfoBuilder};
 
+// use clap::Parser;
+use clap::{Command, CommandFactory, Parser};
+use clap_complete::{generate, Generator};
 use cli::{Cli, Commands, CacheCommands};
-use clap::Parser;
+
+fn print_completions<G: Generator>(gen: G, cmd: &mut Command) {
+    generate(gen, cmd, cmd.get_name().to_string(), &mut io::stdout());
+}
 
 fn store_credentials_cache(cache_file_path: &Path, credentials: &TemporaryAwsCredentials) -> cache::Result<()> {
     debug!("Storing creds to file {}", cache_file_path.as_os_str().to_str().unwrap());
@@ -137,6 +144,11 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             let credentials = assume::acquire_credentials(&role_info).await?;
             print_credentials(&credentials, output_format);
             store_credentials_cache(&cache_file_path(&role_info)?, &credentials)?;
+        }
+        Commands::GenerateCompletions { shell } => {
+            eprintln!("Generating completion file for {shell} ...");
+            let mut cmd = Cli::command();
+            print_completions(shell, &mut cmd);
         }
     }
     Ok(())
