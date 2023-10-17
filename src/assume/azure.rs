@@ -10,11 +10,11 @@ pub type Result<T> = std::result::Result<T, AzureAdTokenError>;
 #[derive(Debug, thiserror::Error)]
 pub enum AzureAdTokenError {
     #[error(transparent)]
-    OidcTokenError(#[from] azure_core::Error),
-    #[error("Azure login failed")]
-    AzureLoginFailed,
+    AcquireOidcTokenFailed(#[from] azure_core::Error),
     #[error(transparent)]
-    SamlTokenError(#[from] reqwest::Error),
+    AcquireSamlTokenFailed(#[from] reqwest::Error),
+    #[error("Azure Login Process Error")]
+    AzureLoginProcessError,
 }
 
 pub async fn oidc_token() -> Result<String> {
@@ -41,20 +41,19 @@ pub async fn saml_token_from_oidc_token(account_id: &str, oidc_token: &str) -> R
 
 pub async fn saml_token(account_id: &str) -> Result<String> {
     match oidc_token().await {
-        Ok(oidc_token) => saml_token_from_oidc_token(account_id, oidc_token.as_str()).await,
+        Ok(oidc_token) => saml_token_from_oidc_token(account_id, &oidc_token).await,
         Err(_error) => {
-            let successful_login = std::process::Command::new("az")
+            std::process::Command::new("az")
                 .arg("login")
                 .status()
-                .is_ok_and(|s| s.success());
-            if successful_login {
-                let oidc_token = oidc_token().await?;
-                saml_token_from_oidc_token(account_id, &oidc_token).await
-            } else {
-                log::error!("Azure login failed");
-                return Err(AzureAdTokenError::AzureLoginFailed);
-            }
-
+                .or(Err(AzureAdTokenError::AzureLoginProcessError))?
+                .success()
+                .then_some(oidc_token().await?)
+                .map(|t| async move {
+                    saml_token_from_oidc_token(account_id, &t).await
+                })
+                .unwrap()
+                .await
         }
     }
 }
