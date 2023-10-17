@@ -24,7 +24,6 @@ use defaults::{DEFAULT_REGION, DEFAULT_CREDS_VERSION};
 use assume::models::TemporaryAwsCredentials;
 use models::{RoleInfo, RoleInfoBuilder};
 
-// use clap::Parser;
 use clap::{Command, CommandFactory, Parser};
 use clap_complete::{generate, Generator};
 use cli::{Cli, Commands, CacheCommands};
