@@ -11,6 +11,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use chrono::{Utc, Local};
+use inquire::Confirm;
 use log::{debug, info, warn};
 
 use cache::{
@@ -28,7 +29,7 @@ use clap::{Command, CommandFactory, Parser};
 use clap_complete::{generate, Generator};
 use cli::{Cli, Commands, CacheCommands};
 
-fn print_completions<G, W>(gen: G, cmd: &mut Command, output: &mut W) 
+fn print_completions<G, W>(gen: G, cmd: &mut Command, output: &mut W)
 where
     G: Generator,
     W: Write,
@@ -91,11 +92,15 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
                     let do_delete = if yes {
                         true
                     } else {
-                        print!("This will delete all cached credentials in the cache directory. Type yes to continue, anything else to cancel: ");
-                        let answer: String = text_io::read!();
-                        answer.to_lowercase() == "yes"
+                        Confirm::new("About to delete cached credentials. Are you sure?")
+                            .with_default(false)
+                            .with_help_message("This will delete ALL cached credentials in the cache directory.")
+                            .with_placeholder("y/yes or n/no")
+                            .prompt()
+                            .unwrap_or(false)
                     };
                     if do_delete {
+                        info!("Deleting all cached credentials.");
                         remove_all_cached_files()?;
                     }
                 }
