@@ -2,7 +2,7 @@
 
 ## Huge caveat!
 
-This project is purely a "learn and experiment wiht Rust" project. You will find
+For now, this project is purely a "learn and experiment wiht Rust" project. You will find
 unconditional `unwrap`s, strange module arrangement, strange `import`s etc. etc.
 
 ## Usage
