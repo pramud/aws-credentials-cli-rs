@@ -19,9 +19,14 @@ jobs:
     strategy:
       matrix:
         include:
-          - build: macos
+          - build: macos-arm
             os: macos-latest
             target: aarch64-apple-darwin
+            command: cargo
+
+          - build: macos-intel
+            os: macos-latest
+            target: x86_64-apple-darwin
             command: cargo
 
           - build: windows-msvc
