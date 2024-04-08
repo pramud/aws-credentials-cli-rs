@@ -6,39 +6,42 @@ mod models;
 
 use std::error::Error;
 use std::fs::File;
-use std::io::Write;
+use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
-use chrono::{Utc, Local};
+use chrono::{Local, Utc};
 use inquire::Confirm;
+use log::error;
 use log::{debug, info, warn};
 
-use cache::{
-    CachedCredentialsError,
-    cache_file_path,
-    create_cache_dir,
-    cache_dir,
-    remove_all_cached_files,
-};
-use defaults::{DEFAULT_REGION, DEFAULT_CREDS_VERSION};
 use assume::models::TemporaryAwsCredentials;
+use cache::{
+    cache_dir, cache_file_path, create_cache_dir, remove_all_cached_files, CachedCredentialsError,
+};
+use defaults::{DEFAULT_CREDS_VERSION, DEFAULT_REGION};
 use models::{RoleInfo, RoleInfoBuilder};
 
 use clap::{Command, CommandFactory, Parser};
-use clap_complete::{generate, Generator};
-use cli::{Cli, Commands, CacheCommands};
+
+use cli::{CacheCommands, Cli, Commands, OutputAsCommands};
 
 fn print_completions<G, W>(gen: G, cmd: &mut Command, output: &mut W)
 where
-    G: Generator,
-    W: Write,
+    G: clap_complete::Generator,
+    W: std::io::Write,
 {
-    generate(gen, cmd, cmd.get_name().to_string(), output);
+    clap_complete::generate(gen, cmd, cmd.get_name().to_string(), output);
 }
 
-fn store_credentials_cache(cache_file_path: &Path, credentials: &TemporaryAwsCredentials) -> cache::Result<()> {
-    debug!("Storing creds to file {}", cache_file_path.as_os_str().to_str().unwrap());
+fn store_credentials_cache(
+    cache_file_path: &Path,
+    credentials: &TemporaryAwsCredentials,
+) -> cache::Result<()> {
+    debug!(
+        "Storing creds to file {}",
+        cache_file_path.as_os_str().to_str().unwrap()
+    );
     create_cache_dir()?;
     let cache_file = File::create(cache_file_path)?;
     serde_json::to_writer_pretty(cache_file, &credentials)?;
@@ -49,21 +52,31 @@ fn credentials_from_cache(path: PathBuf) -> cache::Result<TemporaryAwsCredential
     let file = File::open(path)?;
     let credentials: TemporaryAwsCredentials = serde_json::from_reader(file)?;
     if credentials.expiration < Utc::now() {
-        return Err(CachedCredentialsError::TokenExpired(credentials.expiration))
+        return Err(CachedCredentialsError::TokenExpired(credentials.expiration));
     }
     Ok(credentials)
 }
 
-fn print_credentials(credentials: &TemporaryAwsCredentials, output_format: OutputFormat) {
+fn print_credentials(credentials: &TemporaryAwsCredentials, output_format: OutputFormat) -> io::Result<()> {
     match output_format {
-        OutputFormat::Json => credentials.as_json(),
-        OutputFormat::EnvVars => credentials.as_env_vars(),
+        OutputFormat::Json => Ok(credentials.as_json()),
+        OutputFormat::CredentialsFile {
+            config_file,
+            credentials_file,
+            profile,
+        } => credentials.to_credentials_file(&config_file, &credentials_file, &profile).map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
+        OutputFormat::EnvVars => Ok(credentials.as_env_vars()),
     }
 }
 
 #[derive(Clone, Debug)]
 enum OutputFormat {
     Json,
+    CredentialsFile {
+        config_file: String,
+        credentials_file: String,
+        profile: String,
+    },
     EnvVars,
 }
 
@@ -94,7 +107,9 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
                     } else {
                         Confirm::new("About to delete cached credentials. Are you sure?")
                             .with_default(false)
-                            .with_help_message("This will delete ALL cached credentials in the cache directory.")
+                            .with_help_message(
+                                "This will delete ALL cached credentials in the cache directory.",
+                            )
                             .with_placeholder("y/yes or n/no")
                             .prompt()
                             .unwrap_or(false)
@@ -113,13 +128,22 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
             duration,
             region,
             force,
-            json: _,
-            env_vars
+            output_as,
         } => {
-            let output_format = if env_vars {
-                OutputFormat::EnvVars
-            } else {
-                OutputFormat::Json
+            let output_command = output_as.unwrap_or(OutputAsCommands::Json);
+
+            let output_format = match output_command {
+                OutputAsCommands::Json => OutputFormat::Json,
+                OutputAsCommands::CredentialsFile {
+                    config_file,
+                    credentials_file,
+                    profile,
+                } => OutputFormat::CredentialsFile {
+                    config_file,
+                    credentials_file,
+                    profile,
+                },
+                OutputAsCommands::EnvVars => OutputFormat::EnvVars,
             };
             info!("Using duration {duration}");
             info!("Using region {region}");
@@ -136,21 +160,26 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
                 let file_path = cache_file_path(&role_info)?;
                 match credentials_from_cache(file_path) {
                     Ok(credentials) => {
-                        print_credentials(&credentials, output_format);
+                        print_credentials(&credentials, output_format.clone())?;
                         return Ok(());
                     }
                     Err(error) => match error {
-                        CachedCredentialsError::JsonError(err) => warn!("JSON error: {err}"),
-                        CachedCredentialsError::FileSystemError(err) => warn!("File error: {err}"),
-                        CachedCredentialsError::TokenExpired(expiration_time) => warn!("AWS credentials expired at {expiration_time} ({} local time)", expiration_time.with_timezone(&Local)),
-                        CachedCredentialsError::UnsupportedPlatform => warn!("Can not cache credentials on this platform")
-                    }
+                        CachedCredentialsError::JsonError(err) => error!("JSON error: {err}"),
+                        CachedCredentialsError::FileSystemError(err) => error!("File error: {err}"),
+                        CachedCredentialsError::TokenExpired(expiration_time) => warn!(
+                            "AWS credentials expired at {expiration_time} ({} local time)",
+                            expiration_time.with_timezone(&Local)
+                        ),
+                        CachedCredentialsError::UnsupportedPlatform => {
+                            warn!("Can not cache credentials on this platform")
+                        }
+                    },
                 };
             }
 
             info!("Acquiring credentials");
             let credentials = assume::acquire_credentials(&role_info).await?;
-            print_credentials(&credentials, output_format);
+            print_credentials(&credentials, output_format)?;
             store_credentials_cache(&cache_file_path(&role_info)?, &credentials)?;
         }
         Commands::GenerateCompletions { shell, mut output } => {

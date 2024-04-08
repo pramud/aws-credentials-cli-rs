@@ -1,0 +1,32 @@
+{
+    "configurations": {
+        "launch": {
+            "adapter": "CodeLLDB",
+            "filetypes": [ "rust" ],
+            "breakpoints": {
+                "exception": {
+                    "cpp_throw": "N",
+                    "cpp_catch": "N"
+                }
+            },
+            "configuration": {
+                "type": "lldb",
+                "request": "launch",
+                "program": "${Executable}",
+                "args": ["assume", "-a", "196649124210", "-r", "SSO-Developer", "-f"],
+                "sourceLanguages": ["rust"],
+                "default": true,
+                "cws": "${workspaceFolder}"
+            }
+        },
+        "attach": {
+            "adapter": "CodeLLDB",
+            "filetypes": [ "rust", "c", "cpp", "jai" ],
+            "configuration": {
+                "request": "attach",
+                "program": "${workspaceRoot}/${fileBasenameNoExtension}",
+                "PID": "${PID}"
+            }
+        }
+    }
+}

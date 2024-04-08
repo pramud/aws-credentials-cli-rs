@@ -8,10 +8,10 @@ use crate::defaults::{DEFAULT_DURATION, VALID_AWS_PARTITIONS, DEFAULT_AWS_PARTIT
 #[command(name="aws-credentials-cli")]
 #[command(about="Utility to acquire temporary AWS credentials using the Azure AD based token exchange method.", long_about = None)]
 pub struct Cli {
+    // TODO:
     // Add subcommand for config
     //     Add config subcommand for setting custom cache dir
-    // Add option for storing and getting credentials from the AWS creds file. Use the aws_cred
-    // crate for that.
+    // Add option for storing and getting credentials from the AWS creds file.
 
     #[command(flatten)]
     pub verbose: Verbosity,
@@ -57,13 +57,12 @@ pub enum Commands {
         #[arg(short, long)]
         force: bool,
 
-        /// Output as JSON.
-        #[arg(short, long, default_value_t = true)]
-        json: bool,
-        
-        /// Output as shell variable export statements suitable for shell eval.
-        #[arg(short, long, conflicts_with = "json")]
-        env_vars: bool,
+        /// Output format
+        #[command(subcommand)]
+        output_as: Option<OutputAsCommands>,
+        // #[arg(short, long, default_value = "json")]
+        // #[arg(value_parser = ["json", "credentials-file", "env-vars"])]
+        // output: String,
     },
     /// Generate completion scripts for a supported shell.
     /// Redirect the output to a suitable directory for your shell and run the intitialization
@@ -90,4 +89,27 @@ pub enum CacheCommands {
     },
     /// Prints the cache directory path.
     Path,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum OutputAsCommands {
+    /// Output to standard output.
+    Json,
+    /// Output to the AWS credentials file.
+    CredentialsFile {
+        /// The config file to write to.
+        /// If the file does not exist it will be created.
+        #[arg(long, default_value = "~/.aws/config")]
+        config_file: String,
+
+        /// The AWS credentials file to write to.
+        #[arg(long, default_value = "~/.aws/credentials")]
+        credentials_file: String,
+
+        /// The profile to write to.
+        #[arg(short, long, default_value = "default")]
+        profile: String,
+    },
+    /// Output to environment variables.
+    EnvVars,
 }
