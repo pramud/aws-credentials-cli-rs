@@ -20,17 +20,17 @@ pub enum AzureAdTokenError {
 }
 
 pub async fn oidc_token() -> Result<String> {
-    let az_cli_credential_arc = Arc::new(DefaultAzureCredential::default());
-    let token_credential = azure_identity::AutoRefreshingTokenCredential::new(az_cli_credential_arc);
-    log::debug!("Getting Token");
-    let response = token_credential.get_token(AZ_CLIENT_ID).await?;
-    log::debug!("Done Getting Token");
-    let oidc_token = response.token.secret();
-    Ok(oidc_token.to_string())
-    // let az_cli_credential = DefaultAzureCredential::default();
-    // let res = az_cli_credential.get_token(AZ_CLIENT_ID).await?;
-    // let token = res.token.secret();
-    // Ok(token.to_string())
+    // let az_cli_credential_arc = Arc::new(DefaultAzureCredential::default());
+    // let token_credential = azure_identity::AutoRefreshingTokenCredential::new(az_cli_credential_arc);
+    // log::debug!("Getting Token");
+    // let response = token_credential.get_token(AZ_CLIENT_ID).await?;
+    // log::debug!("Done Getting Token");
+    // let oidc_token = response.token.secret();
+    // Ok(oidc_token.to_string())
+    let az_cli_credential = DefaultAzureCredential::default();
+    let res = az_cli_credential.get_token(&[AZ_CLIENT_ID]).await?;
+    let token = res.token.secret();
+    Ok(token.to_string())
 }
 
 pub async fn saml_token_from_oidc_token(account_id: &str, oidc_token: &str) -> Result<String> {
