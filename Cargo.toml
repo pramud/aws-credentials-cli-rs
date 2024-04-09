@@ -9,7 +9,7 @@ edition = "2021"
 anyhow = "1.0.75"
 aws-config = "1.0.3"
 aws-sdk-sts = "1.4.0"
-aws-smithy-types-convert = { version = "0.61.0", features = ["convert-chrono"] }
+aws-smithy-types-convert = { version = "0.60.8", features = ["convert-chrono"] }
 aws-types = "1.0.3"
 azure_core = "0.14.0"
 azure_identity = "0.14.0"
