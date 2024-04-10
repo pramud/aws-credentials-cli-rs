@@ -28,7 +28,7 @@ pub async fn oidc_token() -> Result<String> {
     // let oidc_token = response.token.secret();
     // Ok(oidc_token.to_string())
     let az_cli_credential = DefaultAzureCredential::default();
-    let res = az_cli_credential.get_token(&[AZ_CLIENT_ID]).await?;
+    let res = az_cli_credential.get_token(AZ_CLIENT_ID).await?;
     let token = res.token.secret();
     Ok(token.to_string())
 }
