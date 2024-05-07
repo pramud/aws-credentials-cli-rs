@@ -2,7 +2,13 @@ use clap::{Parser, Subcommand, ValueHint};
 use clap_complete::Shell;
 use clap_verbosity_flag::Verbosity;
 
-use crate::defaults::{DEFAULT_DURATION, VALID_AWS_PARTITIONS, DEFAULT_AWS_PARTITION, DEFAULT_REGION};
+use crate::defaults::{
+    DEFAULT_DURATION,
+    VALID_AWS_PARTITIONS,
+    DEFAULT_AWS_PARTITION,
+    DEFAULT_REGION,
+    ENV_VARS_STYLES,
+};
 
 #[derive(Debug, Parser)]
 #[command(name="aws-credentials-cli")]
@@ -111,5 +117,9 @@ pub enum OutputAsCommands {
         profile: String,
     },
     /// Output to environment variables.
-    EnvVars,
+    EnvVars {
+        /// The shell type to output for.
+        #[arg(short, long, value_parser = ENV_VARS_STYLES, default_value = "sh")]
+        style: String,
+    },
 }

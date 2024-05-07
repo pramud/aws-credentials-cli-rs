@@ -59,14 +59,26 @@ fn credentials_from_cache(path: PathBuf) -> cache::Result<TemporaryAwsCredential
 
 fn print_credentials(credentials: &TemporaryAwsCredentials, output_format: OutputFormat) -> io::Result<()> {
     match output_format {
-        OutputFormat::Json => Ok(credentials.as_json()),
+        OutputFormat::Json => {
+            credentials.as_json();
+            Ok(())
+        }
         OutputFormat::CredentialsFile {
             config_file,
             credentials_file,
             profile,
         } => credentials.to_credentials_file(&config_file, &credentials_file, &profile).map_err(|e| io::Error::new(io::ErrorKind::Other, e)),
-        OutputFormat::EnvVars => Ok(credentials.as_env_vars()),
+        OutputFormat::EnvVars(style) => {
+            credentials.as_env_vars(style);
+            Ok(())
+        }
     }
+}
+
+#[derive(Clone, Debug)]
+enum EnvVarsStyle {
+    Sh,
+    PowerShell,
 }
 
 #[derive(Clone, Debug)]
@@ -77,7 +89,7 @@ enum OutputFormat {
         credentials_file: String,
         profile: String,
     },
-    EnvVars,
+    EnvVars(EnvVarsStyle),
 }
 
 pub async fn run() -> Result<(), Box<dyn Error>> {
@@ -143,7 +155,16 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
                     credentials_file,
                     profile,
                 },
-                OutputAsCommands::EnvVars => OutputFormat::EnvVars,
+                OutputAsCommands::EnvVars {
+                    style,
+                } => OutputFormat::EnvVars(match style.as_str() {
+                    "sh" => EnvVarsStyle::Sh,
+                    "powershell" => EnvVarsStyle::PowerShell,
+                    _ => {
+                        error!("Unsupported shell type: {style}");
+                        return Ok(());
+                    }
+                }),
             };
             info!("Using duration {duration}");
             info!("Using region {region}");
@@ -165,7 +186,7 @@ pub async fn run() -> Result<(), Box<dyn Error>> {
                     }
                     Err(error) => match error {
                         CachedCredentialsError::JsonError(err) => error!("JSON error: {err}"),
-                        CachedCredentialsError::FileSystemError(err) => error!("File error: {err}"),
+                        CachedCredentialsError::FileSystemError(_) => info!("Cache file not found"),
                         CachedCredentialsError::TokenExpired(expiration_time) => warn!(
                             "AWS credentials expired at {expiration_time} ({} local time)",
                             expiration_time.with_timezone(&Local)

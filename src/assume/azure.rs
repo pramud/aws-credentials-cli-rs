@@ -1,4 +1,4 @@
-use std::sync::Arc;
+// use std::sync::Arc;
 
 use azure_core::auth::TokenCredential;
 use azure_identity::DefaultAzureCredential;
@@ -15,8 +15,8 @@ pub enum AzureAdTokenError {
     AcquireOidcTokenFailed(#[from] azure_core::Error),
     #[error(transparent)]
     AcquireSamlTokenFailed(#[from] reqwest::Error),
-    #[error("Azure Login Process Error")]
-    AzureLoginProcessError,
+    #[error("Azure Login Process Error: {0}")]
+    AzureLoginProcessError(String),
 }
 
 pub async fn oidc_token() -> Result<String> {
@@ -53,17 +53,26 @@ pub async fn saml_token(account_id: &str) -> Result<String> {
     match res {
         Ok(oidc_token) => saml_token_from_oidc_token(account_id, &oidc_token).await,
         Err(_error) => {
-            std::process::Command::new("az")
+            // Thank you Klaus Legarth for the Windows support
+            let mut az_command = if std::env::consts::OS == "windows" {
+                let mut command = std::process::Command::new("cmd");
+                command.arg("/C");
+                command.arg("az");
+                command
+            } else {
+                std::process::Command::new("az")
+            };
+            az_command
                 .arg("login")
                 .status()
-                .or(Err(AzureAdTokenError::AzureLoginProcessError))?
+                .map_err(|err| AzureAdTokenError::AzureLoginProcessError(format!("{err}")))?
                 .success()
                 .then_some(oidc_token().await?)
                 .map(|t| async move {
                     saml_token_from_oidc_token(account_id, &t).await
                 })
                 .unwrap()
-                .await
+            .await
         }
     }
 }
