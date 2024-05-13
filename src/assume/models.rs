@@ -1,14 +1,16 @@
+use std::path::{Path, PathBuf};
+
 use chrono::{DateTime, Local, Utc};
 use configparser::ini::{Ini, IniDefault, WriteOptions};
 use derive_builder::Builder;
 use log::info;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::{DEFAULT_REGION, EnvVarsStyle};
+use crate::{EnvVarsStyle, DEFAULT_REGION};
 
 pub type Result<T> = std::result::Result<T, ConfigError>;
 
- #[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum ConfigError {
     #[error(transparent)]
     ConfigFilePathError(#[from] std::io::Error),
@@ -18,6 +20,17 @@ pub enum ConfigError {
 
     #[error("Failed to expand variable '{0}' in the path '{1}'")]
     PathExpansionError(String, String),
+}
+
+#[derive(Clone, Debug)]
+pub enum OutputFormat {
+    Json,
+    CredentialsFile {
+        config_file: String,
+        credentials_file: String,
+        profile: String,
+    },
+    EnvVars(EnvVarsStyle),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -56,26 +69,77 @@ impl WriteOptionsBuilder {
         WriteOptions::new_with_params(
             self.space_around_delimiters,
             self.multiline_line_indentation,
-            self.blank_lines_between_sections
+            self.blank_lines_between_sections,
         )
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Builder)]
+fn checked_deserialize_expiration<'de, D>(
+    deserializer: D,
+) -> std::result::Result<DateTime<Utc>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let expiration = DateTime::<Utc>::deserialize(deserializer)?;
+    if expiration < Utc::now() {
+        return Err(serde::de::Error::custom(format!(
+            "AWS credentials expired at {expiration} ({} local time)",
+            expiration.with_timezone(&Local)
+        )));
+    }
+    Ok(expiration)
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Builder)]
+#[builder(build_fn(validate = "Self::validate"))]
 #[serde(rename_all = "PascalCase")]
 pub struct TemporaryAwsCredentials {
     pub version: i32,
     pub access_key_id: String,
     pub secret_access_key: String,
     pub session_token: String,
+    #[serde(deserialize_with = "checked_deserialize_expiration")]
+    #[builder(try_setter, setter(into))]
+    /// If expiration is set by the builder or by `serde` deserialization and it is in the past then an error will be returned
     pub expiration: DateTime<Utc>,
     #[serde(skip)]
     #[serde(default = "default_region")]
     pub region: String,
 }
 
+impl TemporaryAwsCredentialsBuilder {
+    fn validate(&self) -> std::result::Result<(), String> {
+        match self.expiration {
+            Some(expiration) if expiration < Utc::now() => Err(format!(
+                "AWS credentials expired at {expiration} ({} local time)",
+                expiration.with_timezone(&Local)
+            )),
+            _ => Ok(()),
+        }
+    }
+}
+
 impl TemporaryAwsCredentials {
-    pub fn as_json(&self) {
+    pub fn output_as(&self, output_format: &OutputFormat) -> std::io::Result<()> {
+        match output_format {
+            OutputFormat::Json => {
+                self.as_json();
+                Ok(())
+            }
+            OutputFormat::CredentialsFile {
+                config_file,
+                credentials_file,
+                profile,
+            } => self
+                .to_credentials_file(config_file, credentials_file, profile)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)),
+            OutputFormat::EnvVars(style) => {
+                self.as_env_vars(style);
+                Ok(())
+            }
+        }
+    }
+    fn as_json(&self) {
         let json_string = serde_json::to_string_pretty(&self).unwrap(); // TODO: handle error
         println!("{json_string}");
         info!(
@@ -84,36 +148,32 @@ impl TemporaryAwsCredentials {
         );
     }
 
-    pub fn to_credentials_file(&self, config_file: &str, credentials_file: &str, profile: &str) -> Result<()> {
-        let mut ini_defaults = IniDefault::default();
-        ini_defaults.multiline = true;
-        ini_defaults.default_section = String::from("no-section");
-        ini_defaults.case_sensitive = true;
+    fn to_credentials_file(
+        &self,
+        config_file: impl AsRef<str>,
+        credentials_file: impl AsRef<str>,
+        profile: impl AsRef<str>,
+    ) -> Result<()> {
+        let aws_config_file_path = path_for_file(config_file.as_ref())?;
+        let mut aws_config = ini_for_file(&aws_config_file_path)?;
 
-        let aws_credentials_file_path = path_for_file(credentials_file)?;
-        create_if_not_exists(&aws_credentials_file_path)?;
-        let mut aws_credentials = Ini::new_from_defaults(ini_defaults.clone());
-        aws_credentials.load(&aws_credentials_file_path).map_err(ConfigError::ConfigLoadError)?;
+        let aws_credentials_file_path = path_for_file(credentials_file.as_ref())?;
+        let mut aws_credentials = ini_for_file(&aws_credentials_file_path)?;
 
-        let aws_config_file_path = path_for_file(config_file)?;
-        create_if_not_exists(&aws_config_file_path)?;
-        let mut aws_config = Ini::new_from_defaults(ini_defaults);
-        aws_config.load(&aws_config_file_path).map_err(ConfigError::ConfigLoadError)?;
-
-        aws_config.set(profile, "region", Some(self.region.clone()));
+        aws_config.set(profile.as_ref(), "region", Some(self.region.clone()));
 
         aws_credentials.set(
-            profile,
+            profile.as_ref(),
             "aws_access_key_id",
             Some(self.access_key_id.clone()),
         );
         aws_credentials.set(
-            profile,
+            profile.as_ref(),
             "aws_secret_access_key",
             Some(self.secret_access_key.clone()),
         );
         aws_credentials.set(
-            profile,
+            profile.as_ref(),
             "aws_session_token",
             Some(self.session_token.clone()),
         );
@@ -130,7 +190,7 @@ impl TemporaryAwsCredentials {
         Ok(())
     }
 
-    pub fn as_env_vars(&self, style: crate::EnvVarsStyle) {
+    fn as_env_vars(&self, style: &crate::EnvVarsStyle) {
         match style {
             EnvVarsStyle::Sh => {
                 println!(
@@ -161,7 +221,7 @@ fn default_region() -> String {
     DEFAULT_REGION.to_string()
 }
 
-fn create_if_not_exists(file_path: &std::path::Path) -> Result<()> {
+fn create_if_not_exists(file_path: &Path) -> Result<()> {
     if !file_path.exists() {
         // We assume that the last part of the path is a file
         // Create the file's parent directory if needed
@@ -174,9 +234,24 @@ fn create_if_not_exists(file_path: &std::path::Path) -> Result<()> {
     Ok(())
 }
 
-fn path_for_file(file: &str) -> Result<std::path::PathBuf> {
+fn path_for_file(file: &str) -> Result<PathBuf> {
     let file_path = shellexpand::full(&file)
         .map_err(|e| ConfigError::PathExpansionError(e.var_name, file.to_string()))?
         .to_string();
-    Ok(std::path::Path::new(&file_path).to_path_buf())
+    Ok(Path::new(&file_path).to_path_buf())
+}
+
+fn ini_for_file(file: &Path) -> Result<Ini> {
+    create_if_not_exists(file)?;
+
+    let mut ini_defaults = IniDefault::default();
+    ini_defaults.multiline = true;
+    ini_defaults.default_section = String::from("no-section");
+    ini_defaults.case_sensitive = true;
+
+    let mut aws_credentials = Ini::new_from_defaults(ini_defaults.clone());
+    aws_credentials
+        .load(file)
+        .map_err(ConfigError::ConfigLoadError)?;
+    Ok(aws_credentials)
 }
