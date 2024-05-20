@@ -22,7 +22,7 @@ pub enum AwsCredentialsError {
 }
 
 pub async fn acquire_aws_credentials(role_info: &RoleInfo, saml_token: &str) -> Result<TemporaryAwsCredentials> {
-    let config = aws_config::defaults(aws_config::BehaviorVersion::v2023_11_09())
+    let config = aws_config::defaults(aws_config::BehaviorVersion::v2024_03_28())
         .no_credentials()
         .region(Region::new(role_info.region.clone()))
         .load()
